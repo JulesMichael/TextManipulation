@@ -1,9 +1,105 @@
+#!/usr/bin/env python3
 import random
 from math import floor
+import time
+import requests
+from re import findall
+from threading import Thread
+from bs4 import BeautifulSoup as bs
+from urllib.parse import urlparse
+
+def get_page_text(url):
+    try:
+        raw_html = requests.get(url).text
+        soup = bs(raw_html, 'html.parser')
+        return soup.body.get_text() or None
+        
+    except requests.exceptions.ConnectionError:
+        return None
+        
+    except Exception as e:
+        raise e
+
+class LoadTextsFromWeb(object):
+    """
+        l = LoadTextsFromWeb(startUris = [])
+        l.start()
+        # Pendant le scrap
+        print("Hey")
+        l.stop()
+        # l.stop arret le scrap
+        l.result()
+    """
+
+    def __init__(self,startUrls = []):
+        self.urls = startUrls
+        self.texts = []
+        
+    @staticmethod
+    def get_page_text(url):
+        """
+        Creer une requette GET
+        """
+        try:
+            raw_html = requests.get(url).text
+            soup = bs(raw_html, 'html.parser')
+            return soup.body.get_text() or None
+            
+        except requests.exceptions.ConnectionError:
+            return None
+        
+        except Exception as e:
+            raise e
+
+    def run(self,function,*argv,**kwargs):
+        """
+        Lance une fonction à la fin de l'analyse d'une page web.  
+        """
+        raise NotImplementedError
+    
+    def start(self):
+        """
+        Lance le scrap
+        """
+        for urls in self.urls:
+            pass
+        raise NotImplementedError
+        
+    def stop(self):
+        """
+        Stop le scrap
+        """
+        raise NotImplementedError
+    
+    def __create_threads(self):
+        """
+        Creer les theads et les lance quand le nb de theads est en dessous de la limite
+        """
+        raise NotImplementedError
+    
+    def __process(self,url):
+        """
+        Traites les données
+        """
+        pass
+    
+    def result(self):
+        """
+        Return the texts
+        """
+        return self.texts
+
 
 class InputTypeError(TypeError):
     def __init__(self, value):
         self.value = value
+
+def groupWords(s,depth):
+    if type(s) != serializer:
+        raise InputTypeError("Input is'n a serializer object")
+    else:
+        words = s.words
+        return [words[word:word+depth] for word in range(len(words)-depth)]
 
 class serializer(object):
     def __init__(self,input_,punctuation=False,do=["subsections","sentences","words"]):
@@ -36,13 +132,13 @@ class serializer(object):
             return " ".join(self.get_sentences()).split(" ")
         else:
             return self.input_.split(" ")
-    
-            
+
 class markov(object):
     def __init__(self,input_,depth=2):
+        self.depth = depth
         self.input_ = input_
         if type(input_) != serializer:
-            raise InputTypeError("Input is'n a serializer object")
+            raise InputTypeError("Input isn't a serializer object")
         else:
             self.datas = self.analyse()
         
@@ -51,8 +147,12 @@ class markov(object):
         for sentence in self.input_.sentences:
             if sentence != "":
                 words = ["START"]
-                words = [word.lower() for word in serializer(sentence,do=["words"]).words]
+                words.extend([word.lower() for word in serializer(sentence,do=["words"]).words])
                 words.append("END")
+                s = serializer('');s.words = words
+                #grams = groupWords(s,self.depth)
+                
+                
                 for wId in range(len(words)-1):
                     if not datas.get(words[wId]):
                         datas[words[wId]] = {}
@@ -66,13 +166,13 @@ class markov(object):
                 datas[mainW][secW] = datas[mainW][secW]/len(datas[mainW])
         return datas
         
-    def generate(self,length,start=None):
+    def generate(self,length=None,start=None):
         if start:
             text = [start]
         else:
             text = ["START"]
 
-        for _ in range(length):
+        def append_group():
             if self.datas.get(text[-1]):
                 itemmax = 0
                 itemname = []
@@ -83,15 +183,27 @@ class markov(object):
                         itemname.append(item)
                 if type(itemname) == list:
                     itemname = random.choice(itemname)
-                #text.append(" ".join(itemname))
                 text.append(itemname)
+        if length:
+            for _ in range(length):
+                append_group()
+                if  text[-1] == "END":
+                    break
+        else:
+            while text[-1] != "END":
+                append_group()
+            
         return (text)
 
 class SortWordsChromosome(object):
     def __init__(self,sentence):
         self.entry = sentence[:]
+        self.len = len(sentence)
         self.sentence = sentence
-        random.shuffle(self.sentence)
+        # random.shuffle(self.sentence)
+        i_1 = random.choice(range(self.len))
+        i_2 = random.choice(range(self.len))
+        self.sentence.insert(i_1, self.sentence.pop(i_2))
         self.fitness = -1
         self.__str__()
     def __str__(self):
@@ -100,9 +212,9 @@ class SortWordsChromosome(object):
 
     def __repr__(self):
         return "<Entry {} List: {}, String: \"{}\", Fitness: {}>".format(self.entry,self.sentence,self.__str__(),self.fitness)
-        
-class SortWords():
-    def __init__(self,sentence,markov,population=50,generations=10000):
+
+class SortWords(object):
+    def __init__(self,sentence,markov,population=50,generations=10000,start = False):
         self.sentence = sentence
         self.sentenceLen = len(self.sentence)
         self.markov = markov
@@ -119,14 +231,19 @@ class SortWords():
     def computeFitness(self):
         for i in range(len(self.chromosomes)):
             prob = []
-            for j in range(len(self.chromosomes[i].sentence)-1):
-                mainW = self.chromosomes[i].sentence[j]
-                secW = self.chromosomes[i].sentence[j+1]
+            chromosome = self.chromosomes[i]
+            chromosome.sentence.insert(0,"START")
+            chromosome.sentence.append("END")
+            for j in range(len(chromosome.sentence)-1):
+                mainW = chromosome.sentence[j]
+                secW = chromosome.sentence[j+1]
                 if self.markov.datas.get(mainW):
                     prob.append(self.markov.datas[mainW].get(secW,0))
                 else:
                     prob.append(0)
-            self.chromosomes[i].fitness =  sum(prob) / (len(self.chromosomes[i].sentence)-1 ) * 100
+            chromosome.fitness =  sum(prob) / (len(chromosome.sentence)-1 ) # * 100
+            chromosome.sentence.remove("START")
+            chromosome.sentence.remove("END")
     
     def makeSelection(self):
         self.chromosomes = sorted(self.chromosomes, key=lambda chromosome: chromosome.fitness, reverse=True)[:floor(len(self.chromosomes)/2)]
@@ -137,3 +254,7 @@ class SortWords():
     
     def result(self):
         return self.chromosomes[0]
+    
+    def get_prob(self):
+        return self.chromosomes[0].fitness
+        
